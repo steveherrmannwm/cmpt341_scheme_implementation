@@ -35,6 +35,7 @@ def parseProgramHelper(p : SExp, acc : List[Def]) : Program = {
       case SCons(first, rest) =>{
         first match {
           // TODO: Change how we parse the program, to allow for multiple arguments
+          // Try matching the first part of each list, and seeing if defines or a function name is called
           case SList(SSymbol(name), SInt(value)) =>
             Program(acc.reverse, parseExp(first))
           case _ => parseProgramHelper(rest,  parseFunction(first) :: acc)
