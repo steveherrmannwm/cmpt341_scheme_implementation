@@ -130,13 +130,13 @@ def findFunction(l: List[Def], name: String) : Def = {
   }
 }
 
-def interpFuncArgs(argNames : List[String], argVals : List[Exp], acc: Env, functions : List[Def]) : Map[String, SExp] = {
+def interpFuncArgs(argNames : List[String], argVals : List[Exp], acc: Env, env: Env, functions : List[Def]) : Map[String, SExp] = {
   (argNames, argVals) match {
     case (Nil, Nil) => {
       acc
     }
     case (argName :: args, argVal :: vals) => {
-      interpFuncArgs(args, vals, acc + (argName -> interpExp(argVal, acc, functions)), functions)
+      interpFuncArgs(args, vals, acc + (argName -> interpExp(argVal, env, functions)), env, functions)
     }
    case (Nil, head :: tail) => throw new RuntimeException("Too many arguments were called for the function")
     case (head:: tail, Nil) => throw new RuntimeException("Function missing required arguments")
@@ -148,7 +148,8 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
         case Literal(v) => v
         case Call(f, e) => {
           val func = findFunction(functions, f)
-          val ma = interpFuncArgs(func.arguments, e, env, functions)
+          // Provide scoping and sets the argument values for our functions
+          val ma = interpFuncArgs(func.arguments, e, Map(), env, functions)
           interpExp(func.body, ma, functions)
         }
         case Add(l,r) => {
@@ -217,14 +218,16 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
         }
       }
       case Cons(l, r) => {
-        SList(interpExp(l, env, functions), interpExp(r, env, functions))
+        SCons(interpExp(l, env, functions), interpExp(r, env, functions))
       }
       case Car(exp) =>
       {
         val l = interpExp(exp, env, functions)
         l match {
           case SNil => throw new RuntimeException("Structure given to car wasn't a pair")
-          case SCons(head, tail) => head
+          case SCons(head, tail) => {
+            head
+          }
         }
       }
       case Cdr(exp) => {
