@@ -5,26 +5,22 @@ case class Literal(v: SExp) extends Exp
 case class Add(lhs: Exp, rhs: Exp) extends Exp
 case class Subtract(lhs: Exp, rhs: Exp) extends Exp
 case class Multiply(lhs: Exp, rhs: Exp) extends Exp
-case class Call(lhs : String, rhs : Exp) extends Exp
+case class Call(funcName : String, args : List[Exp]) extends Exp
 case class Let(v : String,
                rhs: Exp,
                body : Exp) extends Exp
 case class Ref(v : String) extends Exp
 case class Conditional(cond: Exp, true_case: Exp, false_case: Exp) extends Exp
 case class Equal(lhs: Exp, rhs: Exp) extends Exp
-case class Null() extends Exp
-case class Quote(exp: SExp) extends Exp
-case class Cons(lhs: Exp, rhs: Exp) extends Exp
-case class Cars(lhs: Exp, rhs: Exp) extends Exp
-case class Cdr(lhs: Exp, rhs: Exp) extends Exp
-case class NullFunc(e: Exp) extends Exp
 
-case class Pair(head: Exp, tail: Exp) extends Exp
-
+case class Cons(head: Exp, tail: Exp) extends Exp
+case class Null(exp: Exp) extends Exp
+case class Car(exp: Exp) extends Exp
+case class Cdr(exp: Exp) extends Exp
+case class Pair(exp: Exp) extends Exp
 
 case class Def(name : String, arguments : List[String], body : Exp)
 case class Program(defs : List[Def], exp : Exp)
-
 
 
 def parseProgram(p: SExp) : Program = parseProgramHelper(p, Nil)
@@ -34,21 +30,28 @@ def parseProgramHelper(p : SExp, acc : List[Def]) : Program = {
       case SNil => throw new IllegalArgumentException("Invalid program")
       case SCons(first, rest) =>{
         first match {
-          // TODO: Change how we parse the program, to allow for multiple arguments
           // Try matching the first part of each list, and seeing if defines or a function name is called
-          case SList(SSymbol(name), SInt(value)) =>
-            Program(acc.reverse, parseExp(first))
-          case _ => parseProgramHelper(rest,  parseFunction(first) :: acc)
+        case SNil => throw new IllegalArgumentException("Invalid program")
+        case SCons(definition, remaining) => {
+          definition match {
+            case SSymbol("define") =>
+              parseProgramHelper(rest, parseFunction(first) :: acc)
+            case _  => {
+              Program(acc.reverse, parseExp(first))
+            }
+          }
         }
       }
+    }
   }
 }
 
-def parseArgs(args : SList, acc : List[String]) : List[String] = {
+def parseArgs(args : SExp, acc : List[String]) : List[String] = {
   args match {
     case SNil => acc
-    case SCons(first, rest) =>
-      first :: parseArgs(args, acc)
+    case SCons(SSymbol(first), rest) =>{
+      first :: parseArgs(rest, acc)
+    }
   }
 }
 
@@ -56,7 +59,7 @@ def parseFunction(function: SExp) : Def  = {
   function match {
     case SList(SSymbol("define"), list, body) =>
       list match {
-        case SCons(name, rest) =>
+        case SCons(SSymbol(name), rest) =>
           Def(name, parseArgs(rest, Nil), parseExp(body))
       }
       case _ => throw new IllegalArgumentException("Invalid function definitons")
@@ -65,9 +68,11 @@ def parseFunction(function: SExp) : Def  = {
 
 def parseExp(e: SExp) : Exp = {
     e match {
+      case SNil => Literal(SNil)
       case STrue() => Literal(STrue())
       case SFalse() => Literal(SFalse())
       case SInt(v) => Literal(SInt(v))
+      case SList(SSymbol("quote"), exp) => Literal(exp)
       case SList(SSymbol("+"), l, r) =>
         Add(parseExp(l), parseExp(r))
       case SList(SSymbol("-"), l, r) =>
@@ -79,15 +84,36 @@ def parseExp(e: SExp) : Exp = {
                  SList(SList(SSymbol(id), rhs)),
                  body) =>
         Let(id, parseExp(rhs), parseExp(body))
-      // TODO: Implement handling functions of multiple parameters, need to parse an SList
-      case SList(SSymbol(id), e) => Call(id, parseExp(e))
       case SList(SSymbol("if"), cond, t, f) =>
         Conditional(parseExp(cond), parseExp(t), parseExp(f))
       case SList(SSymbol("equal?"), lhs, rhs) =>
         Equal(parseExp(lhs), parseExp(rhs))
-      case _ => throw new IllegalArgumentException(
-                  "not a valid expression")
+      case SList(SSymbol("cons"), h, t) =>
+        Cons(parseExp(h), parseExp(t))
+      case SList(SSymbol("car"), exp) =>
+        Car(parseExp(exp))
+      case SList(SSymbol("cdr"), exp) =>
+        Cdr(parseExp(exp))
+      case SList(SSymbol("pair?"), exp) =>
+        Pair(parseExp(exp))
+      case SList(SSymbol("null?"), exp) =>
+        Null(parseExp(exp))
+      // If we're dealing with a function, we may not know how many arguments we're dealing with, so use a special function
+      case function => function match {
+        case SNil => throw new IllegalArgumentException("Illegal function call")
+        case SCons(SSymbol(id), args) => {
+          parseFunctionCall(id, args, Nil)
+        }
+      }
     }
+}
+
+def parseFunctionCall(name: String, function: SExp, acc: List[Exp]) : Exp = {
+  function match {
+    case SNil => Call(name, acc.reverse)
+    case SCons(first, rest) =>
+      parseFunctionCall(name, rest, parseExp(first) ::acc)
+  }
 }
 
 type Env = Map[String, SExp]
@@ -104,13 +130,26 @@ def findFunction(l: List[Def], name: String) : Def = {
   }
 }
 
+def interpFuncArgs(argNames : List[String], argVals : List[Exp], acc: Env, functions : List[Def]) : Map[String, SExp] = {
+  (argNames, argVals) match {
+    case (Nil, Nil) => {
+      acc
+    }
+    case (argName :: args, argVal :: vals) => {
+      interpFuncArgs(args, vals, acc + (argName -> interpExp(argVal, acc, functions)), functions)
+    }
+   case (Nil, head :: tail) => throw new RuntimeException("Too many arguments were called for the function")
+    case (head:: tail, Nil) => throw new RuntimeException("Function missing required arguments")
+  }
+}
+
 def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
     e match {
         case Literal(v) => v
         case Call(f, e) => {
           val func = findFunction(functions, f)
-          interpExp(func.body, env + (func.argument -> interpExp(e, env, functions)),
-            functions)
+          val ma = interpFuncArgs(func.arguments, e, env, functions)
+          interpExp(func.body, ma, functions)
         }
         case Add(l,r) => {
           val lv = interpExp(l, env, functions)
@@ -137,9 +176,12 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
             case _ => throw new RuntimeException("An error occurred while multipling")
           }
         }
-        case Ref(id) => env.get(id) match {
+        case Ref(id) =>
+          env.get(id) match {
           case None => throw new RuntimeException("unbound variable")
-          case Some(v) => v
+          case Some(v) => {
+            v
+          }
         }
         case Let(id, rhs, body) =>{
             val rhsVal = interpExp(rhs, env, functions)
@@ -171,6 +213,39 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
               SFalse()
           case (STrue(), STrue()) => STrue()
           case (SFalse(), SFalse()) => STrue()
+          case _ => SFalse()
+        }
+      }
+      case Cons(l, r) => {
+        SList(interpExp(l, env, functions), interpExp(r, env, functions))
+      }
+      case Car(exp) =>
+      {
+        val l = interpExp(exp, env, functions)
+        l match {
+          case SNil => throw new RuntimeException("Structure given to car wasn't a pair")
+          case SCons(head, tail) => head
+        }
+      }
+      case Cdr(exp) => {
+        val l = interpExp(exp, env, functions)
+        l match {
+          case SNil => throw new RuntimeException("structure given to Cdr wasn't a pair")
+          case SCons(head, tail) => tail
+        }
+      }
+      case Pair(exp) => {
+        val l = interpExp(exp, env, functions)
+
+        l match {
+          case SList(a) => STrue()
+          case _ => SFalse()
+        }
+      }
+      case Null(exp) => {
+        val l = interpExp(exp, env , functions)
+        l match {
+          case SNil => STrue()
           case _ => SFalse()
         }
       }
@@ -214,7 +289,15 @@ val progEx1 = parseProgram(parseSExp(
 """))
 (progEx1 ==
   Program(List(
-    Def("square", "n", Multiply(Ref("n"), Ref("n")))
+    Def("square", List("n"), Multiply(Ref("n"), Ref("n")))
   ),
-  Call("square", Literal(SInt(5))))
+  Call("square", List(Literal(SInt(5)))))
 )
+
+val progEx3 = parseProgram(parseSExp("""
+ ((define (append l s)
+      (if (null? l)
+             s
+                  (cons (car l) (append (cdr l) s))))
+               (append (quote (1 2 3)) (quote (4 5 6))))
+  """))
