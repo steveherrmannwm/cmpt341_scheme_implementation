@@ -11,7 +11,12 @@ case class Let(v : String,
                body : Exp) extends Exp
 case class Ref(v : String) extends Exp
 case class Conditional(cond: Exp, true_case: Exp, false_case: Exp) extends Exp
+
 case class Equal(lhs: Exp, rhs: Exp) extends Exp
+case class LessThan(lhs: Exp, rhs: Exp) extends Exp
+case class LessThanEqual(lhs: Exp, rhs: Exp) extends Exp
+case class GreaterThan(lhs: Exp, rhs: Exp) extends Exp
+case class GreaterThanEqual(lhs: Exp, rhs: Exp) extends Exp
 
 case class Cons(head: Exp, tail: Exp) extends Exp
 case class Null(exp: Exp) extends Exp
@@ -88,6 +93,14 @@ def parseExp(e: SExp) : Exp = {
         Conditional(parseExp(cond), parseExp(t), parseExp(f))
       case SList(SSymbol("equal?"), lhs, rhs) =>
         Equal(parseExp(lhs), parseExp(rhs))
+      case SList(SSymbol("<"), lhs, rhs) =>
+        LessThan(parseExp(lhs), parseExp(rhs))
+      case SList(SSymbol("<="), lhs, rhs) =>
+        LessThanEqual(parseExp(lhs), parseExp(rhs))
+      case SList(SSymbol(">"), lhs, rhs) =>
+        GreaterThan(parseExp(lhs), parseExp(rhs))
+      case SList(SSymbol(">="), lhs, rhs) =>
+        GreaterThanEqual(parseExp(lhs), parseExp(rhs))
       case SList(SSymbol("cons"), h, t) =>
         Cons(parseExp(h), parseExp(t))
       case SList(SSymbol("car"), exp) =>
@@ -202,19 +215,87 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
                 case _ => throw new RuntimeException("unable to parse conditional")
             }
         }
-      case Equal(l,r) => {
+        case Equal(l,r) => {
+          val lv = interpExp(l, env, functions)
+          val rv = interpExp(r, env, functions)
+
+          (lv, rv) match {
+            case (SInt(l), SInt(v)) =>
+              if(l == v)
+                STrue()
+              else
+                SFalse()
+            case (STrue(), STrue()) => STrue()
+            case (SFalse(), SFalse()) => STrue()
+            case _ => SFalse()
+        }
+      }
+      case GreaterThan(l, r) => {
         val lv = interpExp(l, env, functions)
         val rv = interpExp(r, env, functions)
-
         (lv, rv) match {
-          case (SInt(l), SInt(v)) =>
-            if(l == v)
+          case (SInt(l), SInt(v)) => {
+            if(l > v)
               STrue()
             else
               SFalse()
+          }
+          case (STrue(), SFalse()) => STrue()
+          case (STrue(), STrue()) => SFalse()
+          case (SFalse(), STrue()) => SFalse()
+          case (SFalse(), SFalse()) => SFalse()
+          case _ => throw new RuntimeException("Tried to compare two types of SExps")
+        }
+      }
+      case GreaterThanEqual(l, r) => {
+        val lv = interpExp(l, env, functions)
+        val rv = interpExp(r, env, functions)
+        (lv, rv) match {
+          case (SInt(l), SInt(v)) => {
+            if(l >= v)
+              STrue()
+            else
+              SFalse()
+          }
+          case (STrue(), SFalse()) => STrue()
           case (STrue(), STrue()) => STrue()
+          case (SFalse(), STrue()) => SFalse()
           case (SFalse(), SFalse()) => STrue()
-          case _ => SFalse()
+          case _ => throw new RuntimeException("Tried to compare two types of SExps")
+        }
+      }
+      case LessThan(l, r) => {
+        val lv = interpExp(l, env, functions)
+        val rv = interpExp(l, env, functions)
+        (lv, rv) match {
+          case (SInt(l), SInt(v)) => {
+            if(l < v)
+              STrue()
+            else
+              SFalse()
+          }
+          case (STrue(), SFalse()) => SFalse()
+          case (STrue(), STrue()) => SFalse()
+          case (SFalse(), STrue()) => STrue()
+          case (SFalse(), SFalse()) => SFalse()
+          case _ => throw new RuntimeException("Tried to compare two types of SExps")
+        }
+      }
+      case LessThanEqual(l, r) => {
+        val lv = interpExp(l, env, functions)
+        val rv = interpExp(l, env, functions)
+        (lv, rv) match {
+          case (SInt(l), SInt(v)) => {
+            if(l < v)
+              STrue()
+            else
+              SFalse()
+          }
+          case (STrue(), SFalse()) => SFalse()
+          case (STrue(), STrue()) => STrue()
+          case (SFalse(), STrue()) => STrue()
+          case (SFalse(), SFalse()) => STrue()
+          case _ => throw new RuntimeException("Tried to compare two types of SExps")
         }
       }
       case Cons(l, r) => {
@@ -304,3 +385,54 @@ val progEx3 = parseProgram(parseSExp("""
                   (cons (car l) (append (cdr l) s))))
                (append (quote (1 2 3)) (quote (4 5 6))))
   """))
+// Returns the sum of the power sums of a given x and n from n to 0
+// Only works with positive integers for x and n
+// x must also be at least 1
+val testProg = parseProgram(parseSExp("""
+ ((define (pow x exp)
+   (if (equal? exp 0)
+     1
+     (* x (pow x (- exp 1)))
+     ))
+  (define (sumOfPows a exp) (if (equal? a 0)
+    0
+    (+ (pow a exp) (sumOfPows (- a 1) exp))))
+  (define (sumsOfPows a exp) (if (equal? exp 1)
+    (sumOfPows a 1)
+    (+ (sumOfPows a exp) (sumsOfPows a (- exp 1)))))
+  (sumsOfPows 3 3)
+  )
+  """))
+assert(interpProgram(testProg) == SInt(56))
+val testProg2 = parseProgram(parseSExp("""
+ ((define (pow x exp)
+   (if (equal? exp 0)
+     1
+     (* x (pow x (- exp 1)))
+     ))
+  (define (sumOfPows a exp) (if (equal? a 1)
+    1
+    (+ (pow a exp) (sumOfPows (- a 1) exp))))
+  (define (sumsOfPows a exp) (if (equal? exp 1)
+    (sumOfPows a 1)
+    (+ (sumOfPows a exp) (sumsOfPows a (- exp 1)))))
+  (sumsOfPows 5 4)
+  )
+  """))
+assert(interpProgram(testProg2) == SInt(1274))
+val testProg3 = parseProgram(parseSExp("""
+ ((define (pow x exp)
+   (if (equal? exp 0)
+     1
+     (* x (pow x (- exp 1)))
+     ))
+  (define (sumOfPows a exp) (if (equal? a 1)
+    1
+    (+ (pow a exp) (sumOfPows (- a 1) exp))))
+  (define (sumsOfPows a exp) (if (equal? exp 1)
+    (sumOfPows a 1)
+    (+ (sumOfPows a exp) (sumsOfPows a (- exp 1)))))
+  (sumsOfPows 1 1)
+  )
+  """))
+assert(interpProgram(testProg3) == SInt(1))
