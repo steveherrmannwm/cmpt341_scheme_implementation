@@ -89,6 +89,8 @@ def parseExp(e: SExp) : Exp = {
                  SList(SList(SSymbol(id), rhs)),
                  body) =>
         Let(id, parseExp(rhs), parseExp(body))
+      case SList(SSymbol("lambda"), SList(args), body) =>
+        Lambda(args, parseExp(body))
       case SList(SSymbol("if"), cond, t, f) =>
         Conditional(parseExp(cond), parseExp(t), parseExp(f))
       case SList(SSymbol("equal?"), lhs, rhs) =>
@@ -130,6 +132,8 @@ def parseFunctionCall(name: String, function: SExp, acc: List[Exp]) : Exp = {
 }
 
 type Env = Map[String, SExp]
+case class Closure(lambda: Exp, env: Env) extends SExp
+case class Primitive(name: String) extends SExp
 
 def findFunction(l: List[Def], name: String) : Def = {
   l match {
@@ -164,6 +168,9 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
           // Provide scoping and sets the argument values for our functions
           val ma = interpFuncArgs(func.arguments, e, Map(), env, functions)
           interpExp(func.body, ma, functions)
+        }
+        case Lambda(args, body) => {
+          
         }
         case Add(l,r) => {
           val lv = interpExp(l, env, functions)
@@ -218,16 +225,7 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
         case Equal(l,r) => {
           val lv = interpExp(l, env, functions)
           val rv = interpExp(r, env, functions)
-
-          (lv, rv) match {
-            case (SInt(l), SInt(v)) =>
-              if(l == v)
-                STrue()
-              else
-                SFalse()
-            case (STrue(), STrue()) => STrue()
-            case (SFalse(), SFalse()) => STrue()
-            case _ => SFalse()
+          lv == rv
         }
       }
       case GreaterThan(l, r) => {
