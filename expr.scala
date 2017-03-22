@@ -176,7 +176,7 @@ def interpExp(e: Exp, env : Env, functions : List[Def]) : SExp = {
         case Subtract(l,r) => {
           val lv = interpExp(l, env, functions)
           val rv = interpExp(r, env, functions)
-
+// butt
           (lv, rv) match {
             case (SInt(l), SInt(r)) => SInt(l-r)
             case _ => throw new RuntimeException("An error occurred while subtracting")
