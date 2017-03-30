@@ -22,26 +22,9 @@ def parseProgram(p: SExp) : Program = parseProgramHelper(p, Nil)
 def parseProgramHelper(p : SExp, acc : List[Def]) : Program = {
   p match {
       case SNil => throw new IllegalArgumentException("Invalid program")
+      case SList(exp) => Program(acc.reverse, parseExp(exp))
       case SCons(first, rest) =>{
-        first match {
-          // Try matching the first part of each list, and seeing if defines or a function name is called
-        case SNil => throw new IllegalArgumentException("Invalid program")
-        case SCons(definition, remaining) => {
-          definition match {
-            case SSymbol("define") =>{
-              parseProgramHelper(rest, parseFunction(first) :: acc)
-            }
-            case SSymbol("let") =>
-              Program(acc.reverse, parseExp(first))
-            case _ => {
-              Program(acc.reverse, parseExp(first))
-            }
-          }
-        }
-        case _ => {
-          Program(acc.reverse, parseExp(first))
-        }
-      }
+        parseProgramHelper(rest, parseFunction(first) :: acc)
     }
   }
 }
@@ -68,7 +51,6 @@ def parseFunction(function: SExp) : Def  = {
 
 def parseExp(e: SExp) : Exp = {
     e match {
-      case SNil => Literal(SNil)
       case STrue() => Literal(STrue())
       case SFalse() => Literal(SFalse())
       case SInt(v) => Literal(SInt(v))
@@ -86,16 +68,17 @@ def parseExp(e: SExp) : Exp = {
       // If we're dealing with a function, we may not know how many arguments we're dealing with, so use a special function
       case function => function match {
         case SNil => throw new IllegalArgumentException("Illegal function call")
-        case SCons(SSymbol(id), args) => {
-          parseFunctionCall(id, args, Nil)
+        // CAN ID BE ANYTHIN OTHER THAN A SSYMBOL?????
+        case SCons(id, args) => {
+          parseFunctionCall(parseExp(id), args, Nil)
         }
       }
     }
 }
 
-def parseFunctionCall(name: String, function: SExp, acc: List[Exp]) : Exp = {
+def parseFunctionCall(name: Exp, function: SExp, acc: List[Exp]) : Exp = {
   function match {
-    case SNil => Call(Ref(name), acc.reverse)
+    case SNil => Call(name, acc.reverse)
     case SCons(first, rest) =>
       parseFunctionCall(name, rest, parseExp(first) ::acc)
   }
@@ -174,7 +157,6 @@ def interpExp(e: Exp, env : Env) : SExp = {
             case Primitive("Pair") => {
               val List(pair) = eargs
               pair match {
-                case SList(a) => STrue()
                 case SCons(head, tail) => STrue()
                 case _ => SFalse()
               }
@@ -260,12 +242,10 @@ def interpProgram(p : Program) : SExp = {
 }
 def evalExp(e : String) : SExp = interpExp(parseExp(parseSExp(e)), initialEnv)
 
-def evalProgram(p : String) : SExp  =
+def evalProgram(p : String) : SExp  ={
   interpProgram(parseProgram(parseSExp(p)))
+}
 
-
-/*val test = evalProgram("(+ 1 2)")
-println(test)*/
 
 // Arithmetic tests
 val arithEx1 = parseExp(parseSExp("(* (- 5 2) 1)"))
@@ -357,10 +337,8 @@ val testProg2 = parseProgram(parseSExp("""
   (sumsOfPows 3 3)
   )
   """))
-println(interpProgram(testProg2))
 assert(interpProgram(testProg2) == SInt(56))
 
-/*
 // FINAL TESTS
 // Math
 
@@ -696,16 +674,6 @@ assert(evalProgram(
       (double 5))))
   """) == SInt(10))
 
-println(parseProgram(parseSExp(
-  """
-  ((((lambda (x) (lambda (y) x))
-    5)
-   6))
-  """
-)
-)
-)
-
 assert(evalProgram(
   """
   ((((lambda (x) (lambda (y) x))
@@ -838,5 +806,4 @@ assert(evalProgram(
                               """
                             )
                           == SInt(120))
-*/
 
